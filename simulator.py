@@ -91,7 +91,6 @@ def run_simulation(params):
             for i in range(weeks_to_simulate)
         ]
         arpu_values.append(arpu_curve)
-
     for week in range(weeks_to_simulate):
         w1 = w1_values[week]
         plateau = plateau_values[week]
@@ -205,37 +204,60 @@ def run_simulation(params):
 
     def calculate_monthly_gmv(dates, weekly_revenue):
         monthly_gmv = {}
+        days_per_month = {}  # Track actual days covered in each month
+
+        # First pass: Calculate raw GMV and track days
         for i, date in enumerate(dates):
             week_revenue = weekly_revenue[i]
             week_start = date
-            week_end = week_start + timedelta(days=6)  # End of the week
+            week_end = week_start + timedelta(days=6)
 
             if week_start.month == week_end.month:
-                # If the week is contained within a single month
+                # Week contained within single month
                 month_key = week_start.strftime("%Y-%m")
                 monthly_gmv[month_key] = monthly_gmv.get(month_key, 0) + week_revenue
+                days_per_month[month_key] = days_per_month.get(month_key, 0) + 7
             else:
-                # For weeks that span two months
-                # Calculate days in each month
+                # Week spans two months
                 days_in_first_month = (
                     week_start.replace(day=1) + timedelta(days=32)
                 ).replace(day=1) - week_start
                 days_in_first_month = days_in_first_month.days
                 days_in_second_month = 7 - days_in_first_month
 
-                # Split revenue proportionally
                 first_month_revenue = week_revenue * (days_in_first_month / 7)
                 second_month_revenue = week_revenue * (days_in_second_month / 7)
 
-                # Add to respective months
                 first_month_key = week_start.strftime("%Y-%m")
                 second_month_key = week_end.strftime("%Y-%m")
 
+                # Add revenue and days to respective months
                 monthly_gmv[first_month_key] = (
                     monthly_gmv.get(first_month_key, 0) + first_month_revenue
                 )
                 monthly_gmv[second_month_key] = (
                     monthly_gmv.get(second_month_key, 0) + second_month_revenue
+                )
+
+                days_per_month[first_month_key] = (
+                    days_per_month.get(first_month_key, 0) + days_in_first_month
+                )
+                days_per_month[second_month_key] = (
+                    days_per_month.get(second_month_key, 0) + days_in_second_month
+                )
+
+        # Second pass: Normalize GMV based on actual days in month
+        for month_key in monthly_gmv:
+            date = datetime.strptime(month_key, "%Y-%m")
+            days_in_month = (date.replace(day=1) + timedelta(days=32)).replace(
+                day=1
+            ) - date.replace(day=1)
+            days_in_month = days_in_month.days
+
+            if days_per_month[month_key] < days_in_month:
+                # Normalize GMV if we don't have data for all days
+                monthly_gmv[month_key] = monthly_gmv[month_key] * (
+                    days_in_month / days_per_month[month_key]
                 )
 
         return monthly_gmv
@@ -296,15 +318,19 @@ params.update(
 st.sidebar.header("ARPPU Parameters")
 params.update(
     {
-        "current_weekly_arpu": st.sidebar.slider("Current ARPPU W1", 0, 50000, 28000),
-        "current_arpu_plateau": st.sidebar.slider(
+        "current_weekly_arpu": st.sidebar.number_input(
+            "Current ARPPU W1", 0, 50000, 28000
+        ),
+        "current_arpu_plateau": st.sidebar.number_input(
             "Current ARPPU Plateau", 0, 50000, 32000
         ),
         "weeks_to_plateau_arpu": st.sidebar.number_input(
             "Weeks to Plateau (ARPPU)", value=10
         ),
-        "final_weekly_arpu": st.sidebar.slider("Final ARPPU W1", 0, 50000, 32000),
-        "final_arpu_plateau": st.sidebar.slider("Final ARPPU Plateau", 0, 50000, 36000),
+        "final_weekly_arpu": st.sidebar.number_input("Final ARPPU W1", 0, 50000, 32000),
+        "final_arpu_plateau": st.sidebar.number_input(
+            "Final ARPPU Plateau", 0, 50000, 36000
+        ),
         "weeks_to_increase_arpu": st.sidebar.number_input(
             "Weeks to To-Be Scenario (ARPPU)", value=48
         ),
