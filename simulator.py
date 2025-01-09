@@ -27,6 +27,8 @@ def run_simulation(params):
 
     final_weekly_arpu = params["final_weekly_arpu"]
     weeks_to_increase_arpu = params["weeks_to_increase_arpu"]
+    current_arpu_plateau = params["current_arpu_plateau"]
+    final_arpu_plateau = params["final_arpu_plateau"]
     # cac_multiplier = params['cac_multiplier']
     # cac_multiplier_limit = params['cac_multiplier_limit']
 
@@ -51,7 +53,11 @@ def run_simulation(params):
     w1_arpu_increase_per_week = (
         final_weekly_arpu - current_weekly_arpu
     ) / weeks_to_increase_arpu
-    arpu_values = [
+    plateau_arpu_increase_per_week = (
+        final_arpu_plateau - current_arpu_plateau
+    ) / weeks_to_increase_arpu
+
+    w1_arpu_values = [
         min(
             current_weekly_arpu + i * w1_arpu_increase_per_week,
             final_weekly_arpu,
@@ -59,20 +65,32 @@ def run_simulation(params):
         )
         for i in range(weeks_to_simulate)
     ]
-    # arpu_values = []
-    # for week in range(weeks_to_simulate):
-    #     cohort_arpu = [current_weekly_arpu]
-    #     for i in range(weeks_to_simulate):
-    #         if i < weekly_arpu_growth_weeks:
-    #             new_arpu = cohort_arpu[-1] * (1 + weekly_arpu_growth_rate)
-    #         else:
-    #             new_arpu = cohort_arpu[-1]
-    #         cohort_arpu.append(new_arpu)
-    #     arpu_values.append(cohort_arpu)
+    plateau_arpu_values = [
+        min(
+            current_arpu_plateau + i * plateau_arpu_increase_per_week,
+            final_arpu_plateau,
+            key=abs,
+        )
+        for i in range(weeks_to_simulate)
+    ]
 
-    arpu_curves = []
-    for i in range(weeks_to_simulate):
-        arpu_curves.append(arpu_values)
+    arpu_values = []
+
+    for week in range(weeks_to_simulate):
+        w1_arpu = w1_arpu_values[week]
+        plateau_arpu = plateau_arpu_values[week]
+        arpu_curve = [
+            (
+                max(
+                    w1_arpu - (w1_arpu - plateau_arpu) * (i / weeks_to_plateau),
+                    plateau_arpu,
+                )
+                if i < weeks_to_plateau
+                else plateau_arpu
+            )
+            for i in range(weeks_to_simulate)
+        ]
+        arpu_values.append(arpu_curve)
 
     for week in range(weeks_to_simulate):
         w1 = w1_values[week]
@@ -140,7 +158,7 @@ def run_simulation(params):
             user_per_cohort = (
                 np.floor(weekly_new_wtu[i]) * retention_values[week - i - 1][i]
             )
-            arpu_per_cohort = arpu_curves[week - i - 1][i]
+            arpu_per_cohort = arpu_values[week - i - 1][i]
             gmv_per_cohort = user_per_cohort * arpu_per_cohort
             user_per_cohort_list.append(user_per_cohort)
             retained_gmv_per_cohort_list.append(gmv_per_cohort)
@@ -150,7 +168,7 @@ def run_simulation(params):
         current_week_wtu = current_wtu + new_wtu + retained_wtu
         current_week_gmv = (
             new_wtu * current_weekly_arpu
-            + current_wtu * arpu_curves[0][week]
+            + current_wtu * arpu_values[0][week]
             + retained_gmv
         )
         user_per_cohort_matrix.append(user_per_cohort_list)
@@ -166,7 +184,7 @@ def run_simulation(params):
 
         # Get retention curve and ARPU for this cohort
         retention_curve = retention_values[week][:weeks_in_year]
-        cohort_arpu = arpu_curves[week][:weeks_in_year]
+        cohort_arpu = arpu_values[week][:weeks_in_year]
 
         # Calculate weekly retained WTU and revenue
         weekly_retained_users = [
@@ -179,7 +197,7 @@ def run_simulation(params):
         ]
 
         # Sum up to get 1-year LTV for the cohort
-        ltv = (sum(weekly_revenue) + current_wtu * arpu_curves[0][week]) / (
+        ltv = (sum(weekly_revenue) + current_wtu * arpu_values[0][week]) / (
             weekly_new_wtu[week] + current_wtu
         )
         print()
@@ -245,7 +263,6 @@ def run_simulation(params):
         "monthly_gmv_df": monthly_gmv_df,
         "arpu_values": arpu_values,
         "retention_values": retention_values,
-        "arpu_curves": arpu_curves,
     }
 
 
@@ -279,8 +296,15 @@ params.update(
 st.sidebar.header("ARPPU Parameters")
 params.update(
     {
-        "current_weekly_arpu": st.sidebar.number_input("Initial W1 ARPPU", value=28000),
-        "final_weekly_arpu": st.sidebar.number_input("Final W1 ARPPU", value=28000),
+        "current_weekly_arpu": st.sidebar.slider("Current ARPPU W1", 0, 50000, 28000),
+        "current_arpu_plateau": st.sidebar.slider(
+            "Current ARPPU Plateau", 0, 50000, 32000
+        ),
+        "weeks_to_plateau_arpu": st.sidebar.number_input(
+            "Weeks to Plateau (ARPPU)", value=10
+        ),
+        "final_weekly_arpu": st.sidebar.slider("Final ARPPU W1", 0, 50000, 32000),
+        "final_arpu_plateau": st.sidebar.slider("Final ARPPU Plateau", 0, 50000, 36000),
         "weeks_to_increase_arpu": st.sidebar.number_input(
             "Weeks to To-Be Scenario (ARPPU)", value=48
         ),
@@ -635,9 +659,8 @@ with tab8:
         return fig
 
     arpu_values = results["arpu_values"]
-    arpu_curves = results["arpu_curves"]
     arpu_fig = plot_arpu_heatmap(
-        arpu_curves, results["weekly_new_wtu"], results["dates"]
+        arpu_values, results["weekly_new_wtu"], results["dates"]
     )
     st.pyplot(arpu_fig)
 # Add metrics
