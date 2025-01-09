@@ -91,7 +91,6 @@ def run_simulation(params):
             for i in range(weeks_to_simulate)
         ]
         arpu_values.append(arpu_curve)
-    st.write(arpu_values)
     for week in range(weeks_to_simulate):
         w1 = w1_values[week]
         plateau = plateau_values[week]
@@ -247,7 +246,6 @@ def run_simulation(params):
                     days_per_month.get(second_month_key, 0) + days_in_second_month
                 )
 
-        st.write(days_per_month)
         # Second pass: Normalize GMV based on actual days in month
         for month_key in monthly_gmv:
             date = datetime.strptime(month_key, "%Y-%m")
@@ -268,7 +266,6 @@ def run_simulation(params):
     dates = [start_date + timedelta(weeks=i) for i in range(weeks_to_simulate)]
 
     monthly_gmv = calculate_monthly_gmv(dates, weekly_gmv)
-    st.write(monthly_gmv)
 
     monthly_gmv_df = pd.DataFrame(list(monthly_gmv.items()), columns=["Month", "GMV"])
     monthly_gmv_df.sort_values("Month", inplace=True)
