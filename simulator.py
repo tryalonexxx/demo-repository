@@ -22,10 +22,11 @@ def run_simulation(params):
     cac = params["cac"]
     marketing_percentage = params["marketing_percentage"]
     current_weekly_arpu = params["current_weekly_arpu"]
-    weekly_arpu_growth_rate = params["weekly_arpu_growth_rate"]
-    weekly_arpu_growth_weeks = params["weekly_arpu_growth_weeks"]
+
     weeks_to_simulate = params["weeks_to_simulate"]
-    maximum_marketing_cost = params["maximum_marketing_cost"]
+
+    final_weekly_arpu = params["final_weekly_arpu"]
+    weeks_to_increase_arpu = params["weeks_to_increase_arpu"]
     # cac_multiplier = params['cac_multiplier']
     # cac_multiplier_limit = params['cac_multiplier_limit']
 
@@ -45,16 +46,29 @@ def run_simulation(params):
         for i in range(weeks_to_simulate)
     ]
     retention_values = []
-    arpu_values = []
-    for week in range(weeks_to_simulate):
-        cohort_arpu = [current_weekly_arpu]
-        for i in range(weeks_to_simulate):
-            if i < weekly_arpu_growth_weeks:
-                new_arpu = cohort_arpu[-1] * (1 + weekly_arpu_growth_rate)
-            else:
-                new_arpu = cohort_arpu[-1]
-            cohort_arpu.append(new_arpu)
-        arpu_values.append(cohort_arpu)
+
+    # arpu 계산
+    w1_arpu_increase_per_week = (
+        final_weekly_arpu - current_weekly_arpu
+    ) / weeks_to_increase_arpu
+    arpu_values = [
+        min(
+            current_weekly_arpu + i * w1_arpu_increase_per_week,
+            final_weekly_arpu,
+            key=abs,
+        )
+        for i in range(weeks_to_simulate)
+    ]
+    # arpu_values = []
+    # for week in range(weeks_to_simulate):
+    #     cohort_arpu = [current_weekly_arpu]
+    #     for i in range(weeks_to_simulate):
+    #         if i < weekly_arpu_growth_weeks:
+    #             new_arpu = cohort_arpu[-1] * (1 + weekly_arpu_growth_rate)
+    #         else:
+    #             new_arpu = cohort_arpu[-1]
+    #         cohort_arpu.append(new_arpu)
+    #     arpu_values.append(cohort_arpu)
 
     arpu_curves = []
     for i in range(weeks_to_simulate):
@@ -126,7 +140,7 @@ def run_simulation(params):
             user_per_cohort = (
                 np.floor(weekly_new_wtu[i]) * retention_values[week - i - 1][i]
             )
-            arpu_per_cohort = arpu_values[week - i - 1][i]
+            arpu_per_cohort = arpu_curves[week - i - 1][i]
             gmv_per_cohort = user_per_cohort * arpu_per_cohort
             user_per_cohort_list.append(user_per_cohort)
             retained_gmv_per_cohort_list.append(gmv_per_cohort)
@@ -136,7 +150,7 @@ def run_simulation(params):
         current_week_wtu = current_wtu + new_wtu + retained_wtu
         current_week_gmv = (
             new_wtu * current_weekly_arpu
-            + current_wtu * arpu_values[0][week]
+            + current_wtu * arpu_curves[0][week]
             + retained_gmv
         )
         user_per_cohort_matrix.append(user_per_cohort_list)
@@ -152,7 +166,7 @@ def run_simulation(params):
 
         # Get retention curve and ARPU for this cohort
         retention_curve = retention_values[week][:weeks_in_year]
-        cohort_arpu = arpu_values[week][:weeks_in_year]
+        cohort_arpu = arpu_curves[week][:weeks_in_year]
 
         # Calculate weekly retained WTU and revenue
         weekly_retained_users = [
@@ -165,7 +179,7 @@ def run_simulation(params):
         ]
 
         # Sum up to get 1-year LTV for the cohort
-        ltv = (sum(weekly_revenue) + current_wtu * arpu_values[0][week]) / (
+        ltv = (sum(weekly_revenue) + current_wtu * arpu_curves[0][week]) / (
             weekly_new_wtu[week] + current_wtu
         )
         print()
@@ -231,41 +245,67 @@ def run_simulation(params):
         "monthly_gmv_df": monthly_gmv_df,
         "arpu_values": arpu_values,
         "retention_values": retention_values,
+        "arpu_curves": arpu_curves,
     }
 
 
 # Streamlit UI
 st.title("Business Metrics Simulator")
 
-# Sidebar inputs
-st.sidebar.header("Input Parameters")
-
+# Initial parameters
+# Initial parameters
+st.sidebar.header("Current State")
 params = {
     "current_wtu": st.sidebar.number_input("Current WTU", value=200000),
-    "initial_w1": st.sidebar.slider("Current WPR W1", 0.0, 1.0, 0.30),
-    "initial_plateau": st.sidebar.slider("Current WPR Plateau", 0.0, 1.0, 0.10),
-    "weeks_to_plateau": st.sidebar.number_input("Weeks to Plateau", value=10),
-    "final_w1": st.sidebar.slider("To-be WPR W1", 0.0, 1.0, 0.40),
-    "final_plateau": st.sidebar.slider("To-be WPR Plateau", 0.0, 1.0, 0.20),
-    "weeks_to_increase": st.sidebar.number_input("Weeks to To-Be Scenario", value=48),
-    "cac": st.sidebar.number_input("CAC", value=20000),
-    "marketing_percentage": st.sidebar.number_input(
-        "Marketing Percentage (GMV)", value=0.025, step=0.001, format="%.3f"
-    ),
-    "maximum_marketing_cost": st.sidebar.number_input(
-        "Maximum Marketing Cost", value=100000000000
-    ),
-    "current_weekly_arpu": st.sidebar.number_input("Current Weekly ARPU", value=28000),
-    "weekly_arpu_growth_rate": st.sidebar.number_input(
-        "Weekly ARPU Growth Rate", value=0.02
-    ),
-    "weekly_arpu_growth_weeks": st.sidebar.number_input(
-        "Weekly ARPU Growth Weeks", value=24
-    ),
-    "weeks_to_simulate": st.sidebar.selectbox("Years to Simulate", [1, 2, 3, 4, 5])
-    * 52,
 }
 
+# Retention parameters
+st.sidebar.header("Retention Parameters")
+params.update(
+    {
+        "initial_w1": st.sidebar.slider("Current WPR W1", 0.0, 1.0, 0.30),
+        "initial_plateau": st.sidebar.slider("Current WPR Plateau", 0.0, 1.0, 0.10),
+        "weeks_to_plateau": st.sidebar.number_input("Weeks to Plateau", value=10),
+        "final_w1": st.sidebar.slider("To-be WPR W1", 0.0, 1.0, 0.40),
+        "final_plateau": st.sidebar.slider("To-be WPR Plateau", 0.0, 1.0, 0.20),
+        "weeks_to_increase": st.sidebar.number_input(
+            "Weeks to To-Be Scenario", value=48
+        ),
+    }
+)
+
+
+# ARPU parameters
+st.sidebar.header("ARPPU Parameters")
+params.update(
+    {
+        "current_weekly_arpu": st.sidebar.number_input("Initial W1 ARPPU", value=28000),
+        "final_weekly_arpu": st.sidebar.number_input("Final W1 ARPPU", value=28000),
+        "weeks_to_increase_arpu": st.sidebar.number_input(
+            "Weeks to To-Be Scenario (ARPPU)", value=48
+        ),
+    }
+)
+
+# Marketing parameters
+st.sidebar.header("Marketing Parameters")
+params.update(
+    {
+        "cac": st.sidebar.number_input("CAC", value=20000),
+        "marketing_percentage": st.sidebar.number_input(
+            "Marketing Percentage (GMV)", value=0.025, step=0.001, format="%.3f"
+        ),
+    }
+)
+
+# Simulation parameters
+st.sidebar.header("Simulation Parameters")
+params.update(
+    {
+        "weeks_to_simulate": st.sidebar.selectbox("Years to Simulate", [1, 2, 3, 4, 5])
+        * 52,
+    }
+)
 # Run simulation
 results = run_simulation(params)
 
@@ -595,8 +635,9 @@ with tab8:
         return fig
 
     arpu_values = results["arpu_values"]
+    arpu_curves = results["arpu_curves"]
     arpu_fig = plot_arpu_heatmap(
-        arpu_values, results["weekly_new_wtu"], results["dates"]
+        arpu_curves, results["weekly_new_wtu"], results["dates"]
     )
     st.pyplot(arpu_fig)
 # Add metrics
