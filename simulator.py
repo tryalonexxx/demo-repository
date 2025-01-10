@@ -10,6 +10,67 @@ import streamlit as st
 from plotly.subplots import make_subplots
 
 
+def calculate_monthly_gmv(dates, weekly_revenue):
+    monthly_gmv = {}
+    days_per_month = {}  # Track actual days covered in each month
+
+    # First pass: Calculate raw GMV and track days
+    for i, date in enumerate(dates):
+        week_revenue = weekly_revenue[i]
+        week_start = date
+        week_end = week_start + timedelta(days=6)
+
+        if week_start.month == week_end.month:
+            # Week contained within single month
+            month_key = week_start.strftime("%Y-%m")
+            monthly_gmv[month_key] = monthly_gmv.get(month_key, 0) + week_revenue
+            days_per_month[month_key] = days_per_month.get(month_key, 0) + 7
+        else:
+            # Week spans two months
+            days_in_first_month = (
+                week_start.replace(day=1) + timedelta(days=32)
+            ).replace(day=1) - week_start
+            days_in_first_month = days_in_first_month.days
+            days_in_second_month = 7 - days_in_first_month
+
+            first_month_revenue = week_revenue * (days_in_first_month / 7)
+            second_month_revenue = week_revenue * (days_in_second_month / 7)
+
+            first_month_key = week_start.strftime("%Y-%m")
+            second_month_key = week_end.strftime("%Y-%m")
+
+            # Add revenue and days to respective months
+            monthly_gmv[first_month_key] = (
+                monthly_gmv.get(first_month_key, 0) + first_month_revenue
+            )
+            monthly_gmv[second_month_key] = (
+                monthly_gmv.get(second_month_key, 0) + second_month_revenue
+            )
+
+            days_per_month[first_month_key] = (
+                days_per_month.get(first_month_key, 0) + days_in_first_month
+            )
+            days_per_month[second_month_key] = (
+                days_per_month.get(second_month_key, 0) + days_in_second_month
+            )
+
+    # Second pass: Normalize GMV based on actual days in month
+    for month_key in monthly_gmv:
+        date = datetime.strptime(month_key, "%Y-%m")
+        days_in_month = (date.replace(day=1) + timedelta(days=32)).replace(
+            day=1
+        ) - date.replace(day=1)
+        days_in_month = days_in_month.days
+
+        if days_per_month[month_key] < days_in_month:
+            # Normalize GMV if we don't have data for all days
+            monthly_gmv[month_key] = monthly_gmv[month_key] * (
+                days_in_month / days_per_month[month_key]
+            )
+
+    return monthly_gmv
+
+
 def run_simulation(params):
     # Unpack parameters
     current_wtu = params["current_wtu"]
@@ -20,7 +81,10 @@ def run_simulation(params):
     final_plateau = params["final_plateau"]
     weeks_to_increase = params["weeks_to_increase"]
     cac = params["cac"]
+    weekly_fixed_cost = params["weekly_fixed_cost"]
+    contribution_margin_ratio = params["contribution_margin_ratio"]
     marketing_percentage = params["marketing_percentage"]
+
     current_weekly_arpu = params["current_weekly_arpu"]
 
     weeks_to_simulate = params["weeks_to_simulate"]
@@ -120,9 +184,15 @@ def run_simulation(params):
         # Check if we've exceeded maximum marketing cost
         total_marketing_spent = sum(marketing_cost)
 
-        new_wtu = np.floor((weekly_gmv[-1] * marketing_percentage) / current_cac)
+        contribution_margin = weekly_gmv[-1] * contribution_margin_ratio
+        fixed_cost = weekly_fixed_cost
+        marketing_cost_per_week = (
+            contribution_margin - fixed_cost
+        ) * marketing_percentage
+        marketing_cost.append(marketing_cost_per_week)
+        new_wtu = np.floor(marketing_cost_per_week / current_cac)
         cac_list.append(current_cac)
-        marketing_cost.append(weekly_gmv[-1] * marketing_percentage)
+
         # Update total acquired users and check CAC multiplier
         total_acquired_users += new_wtu
         # multiplier = total_acquired_users // 10000000000000  # Number of times we've hit 10M
@@ -202,66 +272,6 @@ def run_simulation(params):
         print()
         cohort_ltv.append(ltv)
 
-    def calculate_monthly_gmv(dates, weekly_revenue):
-        monthly_gmv = {}
-        days_per_month = {}  # Track actual days covered in each month
-
-        # First pass: Calculate raw GMV and track days
-        for i, date in enumerate(dates):
-            week_revenue = weekly_revenue[i]
-            week_start = date
-            week_end = week_start + timedelta(days=6)
-
-            if week_start.month == week_end.month:
-                # Week contained within single month
-                month_key = week_start.strftime("%Y-%m")
-                monthly_gmv[month_key] = monthly_gmv.get(month_key, 0) + week_revenue
-                days_per_month[month_key] = days_per_month.get(month_key, 0) + 7
-            else:
-                # Week spans two months
-                days_in_first_month = (
-                    week_start.replace(day=1) + timedelta(days=32)
-                ).replace(day=1) - week_start
-                days_in_first_month = days_in_first_month.days
-                days_in_second_month = 7 - days_in_first_month
-
-                first_month_revenue = week_revenue * (days_in_first_month / 7)
-                second_month_revenue = week_revenue * (days_in_second_month / 7)
-
-                first_month_key = week_start.strftime("%Y-%m")
-                second_month_key = week_end.strftime("%Y-%m")
-
-                # Add revenue and days to respective months
-                monthly_gmv[first_month_key] = (
-                    monthly_gmv.get(first_month_key, 0) + first_month_revenue
-                )
-                monthly_gmv[second_month_key] = (
-                    monthly_gmv.get(second_month_key, 0) + second_month_revenue
-                )
-
-                days_per_month[first_month_key] = (
-                    days_per_month.get(first_month_key, 0) + days_in_first_month
-                )
-                days_per_month[second_month_key] = (
-                    days_per_month.get(second_month_key, 0) + days_in_second_month
-                )
-
-        # Second pass: Normalize GMV based on actual days in month
-        for month_key in monthly_gmv:
-            date = datetime.strptime(month_key, "%Y-%m")
-            days_in_month = (date.replace(day=1) + timedelta(days=32)).replace(
-                day=1
-            ) - date.replace(day=1)
-            days_in_month = days_in_month.days
-
-            if days_per_month[month_key] < days_in_month:
-                # Normalize GMV if we don't have data for all days
-                monthly_gmv[month_key] = monthly_gmv[month_key] * (
-                    days_in_month / days_per_month[month_key]
-                )
-
-        return monthly_gmv
-
     start_date = datetime.now()
     dates = [start_date + timedelta(weeks=i) for i in range(weeks_to_simulate)]
 
@@ -318,18 +328,20 @@ params.update(
 st.sidebar.header("ARPPU Parameters")
 params.update(
     {
-        "current_weekly_arpu": st.sidebar.number_input(
-            "Current ARPPU W1", 0, 50000, 28000
+        "current_weekly_arpu": st.sidebar.slider(
+            "Current ARPPU W1", 0, 50000, 28000, step=1000
         ),
-        "current_arpu_plateau": st.sidebar.number_input(
-            "Current ARPPU Plateau", 0, 50000, 32000
+        "current_arpu_plateau": st.sidebar.slider(
+            "Current ARPPU Plateau", 0, 50000, 32000, step=1000
         ),
         "weeks_to_plateau_arpu": st.sidebar.number_input(
             "Weeks to Plateau (ARPPU)", value=10
         ),
-        "final_weekly_arpu": st.sidebar.number_input("Final ARPPU W1", 0, 50000, 32000),
-        "final_arpu_plateau": st.sidebar.number_input(
-            "Final ARPPU Plateau", 0, 50000, 36000
+        "final_weekly_arpu": st.sidebar.slider(
+            "Final ARPPU W1", 0, 50000, 32000, step=1000
+        ),
+        "final_arpu_plateau": st.sidebar.slider(
+            "Final ARPPU Plateau", 0, 50000, 36000, step=1000
         ),
         "weeks_to_increase_arpu": st.sidebar.number_input(
             "Weeks to To-Be Scenario (ARPPU)", value=48
@@ -341,10 +353,30 @@ params.update(
 st.sidebar.header("Marketing Parameters")
 params.update(
     {
-        "cac": st.sidebar.number_input("CAC", value=20000),
-        "marketing_percentage": st.sidebar.number_input(
-            "Marketing Percentage (GMV)", value=0.025, step=0.001, format="%.3f"
+        "cac": st.sidebar.number_input(
+            "(Paying) Customer Acquisition Cost", value=20000
         ),
+        "weekly_fixed_cost": st.sidebar.number_input(
+            "Weekly Fixed Cost (억)", value=5, step=1
+        )
+        * 100000000,
+        "contribution_margin_ratio": st.sidebar.number_input(
+            "Contribution Margin Ratio (GMV %)",
+            0.0,
+            30.0,
+            10.0,
+            step=0.1,
+            format="%.1f",
+        )
+        * 0.01,
+        "marketing_percentage": st.sidebar.number_input(
+            "Marketing Cost/Net Revenue Ratio (%)",
+            0,
+            200,
+            30,
+            step=1,
+        )
+        * 0.01,
     }
 )
 
@@ -366,7 +398,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(
         "GMV",
         "Monthly GMV",
         "ARPU",
-        "Marketing Cost",
+        "Cost/Revenue",
         "CAC/LTV",
         "Retention Heatmap",
         "ARPU Heatmap",
@@ -474,56 +506,185 @@ with tab4:
         hovermode="x unified",
     )
     st.plotly_chart(fig, use_container_width=True)
-
-
 with tab5:
-    # Existing marketing cost plot
+    # Calculate monthly values
+    monthly_values = {
+        "contribution_margin": {},
+        "fixed_cost": {},
+        "marketing_cost": {},
+        "net_revenue": {},
+    }
+    days_per_month = {}
+
+    # First pass: Calculate raw values and track days
+    for i, date in enumerate(results["dates"]):
+        week_gmv = results["weekly_gmv"][i]
+        week_contribution = week_gmv * params["contribution_margin_ratio"]
+        week_fixed = params["weekly_fixed_cost"]
+        week_marketing = results["marketing_cost"][i]
+        week_net = week_contribution - week_fixed - week_marketing
+
+        week_start = date
+        week_end = week_start + timedelta(days=6)
+
+        if week_start.month == week_end.month:
+            # Week contained within single month
+            month_key = week_start.strftime("%Y-%m")
+            monthly_values["contribution_margin"][month_key] = (
+                monthly_values["contribution_margin"].get(month_key, 0)
+                + week_contribution
+            )
+            monthly_values["fixed_cost"][month_key] = (
+                monthly_values["fixed_cost"].get(month_key, 0) + week_fixed
+            )
+            monthly_values["marketing_cost"][month_key] = (
+                monthly_values["marketing_cost"].get(month_key, 0) + week_marketing
+            )
+            monthly_values["net_revenue"][month_key] = (
+                monthly_values["net_revenue"].get(month_key, 0) + week_net
+            )
+            days_per_month[month_key] = days_per_month.get(month_key, 0) + 7
+        else:
+            # Week spans two months
+            days_in_first_month = (
+                week_start.replace(day=1) + timedelta(days=32)
+            ).replace(day=1) - week_start
+            days_in_first_month = days_in_first_month.days
+            days_in_second_month = 7 - days_in_first_month
+
+            ratio_first_month = days_in_first_month / 7
+            ratio_second_month = days_in_second_month / 7
+
+            first_month_key = week_start.strftime("%Y-%m")
+            second_month_key = week_end.strftime("%Y-%m")
+
+            # Add values and days to respective months
+            for month_key, ratio in [
+                (first_month_key, ratio_first_month),
+                (second_month_key, ratio_second_month),
+            ]:
+                monthly_values["contribution_margin"][month_key] = (
+                    monthly_values["contribution_margin"].get(month_key, 0)
+                    + week_contribution * ratio
+                )
+                monthly_values["fixed_cost"][month_key] = (
+                    monthly_values["fixed_cost"].get(month_key, 0) + week_fixed * ratio
+                )
+                monthly_values["marketing_cost"][month_key] = (
+                    monthly_values["marketing_cost"].get(month_key, 0)
+                    + week_marketing * ratio
+                )
+                monthly_values["net_revenue"][month_key] = (
+                    monthly_values["net_revenue"].get(month_key, 0) + week_net * ratio
+                )
+                days_per_month[month_key] = days_per_month.get(month_key, 0) + (
+                    7 * ratio
+                )
+
+    # Second pass: Normalize values based on actual days in month
+    for month_key in monthly_values["contribution_margin"]:
+        date = datetime.strptime(month_key, "%Y-%m")
+        days_in_month = (date.replace(day=1) + timedelta(days=32)).replace(
+            day=1
+        ) - date.replace(day=1)
+        days_in_month = days_in_month.days
+
+        if days_per_month[month_key] < days_in_month:
+            # Normalize if we don't have data for all days
+            ratio = days_in_month / days_per_month[month_key]
+            for metric in monthly_values:
+                monthly_values[metric][month_key] *= ratio
+
+    # Create monthly plot
     fig = go.Figure()
+
+    # Sort months for proper x-axis ordering
+    months = sorted(monthly_values["contribution_margin"].keys())
+
+    # Add traces
     fig.add_trace(
         go.Scatter(
-            x=results["dates"],
-            y=results["marketing_cost"],
-            mode="lines",
-            name="Marketing Cost",
+            x=months,
+            y=[monthly_values["contribution_margin"][m] for m in months],
+            name="Contribution Margin",
+            marker_color="green",
         )
     )
+
+    fig.add_trace(
+        go.Scatter(
+            x=months,
+            y=[monthly_values["fixed_cost"][m] for m in months],
+            name="Fixed Cost",
+            marker_color="orange",
+        )
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=months,
+            y=[monthly_values["marketing_cost"][m] for m in months],
+            name="Marketing Cost",
+            marker_color="red",
+        )
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=months,
+            y=[monthly_values["net_revenue"][m] for m in months],
+            name="Net Revenue",
+            marker_color="blue",
+        )
+    )
+
     fig.update_layout(
-        title="Marketing Cost",
-        xaxis_title="Date",
-        yaxis_title="Cost",
+        title="Monthly Revenue & Costs",
+        xaxis_title="Month",
+        yaxis_title="Amount (원)",
+        barmode="group",
         hovermode="x unified",
+        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
     )
     st.plotly_chart(fig, use_container_width=True)
 
-    # Calculate monthly marketing costs
-    monthly_marketing_cost = {}
-    for date, cost in zip(results["dates"], results["marketing_cost"]):
-        month_key = date.strftime("%Y-%m")  # Format as 'YYYY-MM'
-        monthly_marketing_cost[month_key] = (
-            monthly_marketing_cost.get(month_key, 0) + cost
-        )
-
-    # Create and display the table
-    monthly_cost_df = pd.DataFrame(
+    monthly_metrics_df = pd.DataFrame(
         [
-            {"Year-Month": month, "Marketing Cost (원)": f"{cost:,.0f}"}
-            for month, cost in monthly_marketing_cost.items()
+            {
+                "Year-Month": month,
+                "Contribution Margin (원)": f"{monthly_values['contribution_margin'][month]:,.0f}",
+                "Fixed Cost (원)": f"{monthly_values['fixed_cost'][month]:,.0f}",
+                "Marketing Cost (원)": f"{monthly_values['marketing_cost'][month]:,.0f}",
+                "Net Revenue (원)": f"{monthly_values['net_revenue'][month]:,.0f}",
+            }
+            for month in months
         ]
     )
-    monthly_cost_df = monthly_cost_df.sort_values("Year-Month")  # Sort by date
 
-    st.subheader("Monthly Marketing Cost")
+    st.subheader("Monthly Metrics")
     st.dataframe(
-        monthly_cost_df,
+        monthly_metrics_df,
         hide_index=True,
         column_config={
             "Year-Month": st.column_config.TextColumn(
                 "연도-월",
-                width="large",
+                width="small",
+            ),
+            "Contribution Margin (원)": st.column_config.TextColumn(
+                "공헌이익",
+                width="small",
+            ),
+            "Fixed Cost (원)": st.column_config.TextColumn(
+                "고정비용",
+                width="small",
             ),
             "Marketing Cost (원)": st.column_config.TextColumn(
                 "마케팅 비용",
-                width="large",
+                width="small",
+            ),
+            "Net Revenue (원)": st.column_config.TextColumn(
+                "순수익",
+                width="small",
             ),
         },
         use_container_width=True,
