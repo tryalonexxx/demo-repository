@@ -391,6 +391,13 @@ params.update(
 # Run simulation
 results = run_simulation(params)
 
+col1 = st.columns(1)
+st.metric(
+    "Total Acquired Transacting Users", f"{sum(results['weekly_new_wtu']):,.0f}명"
+)
+st.metric("Total Marketing Cost", f"{sum(results['marketing_cost']):,.0f}원")
+
+# with col1:
 # Display plots in tabs
 tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(
     [
@@ -522,7 +529,7 @@ with tab5:
         week_contribution = week_gmv * params["contribution_margin_ratio"]
         week_fixed = params["weekly_fixed_cost"]
         week_marketing = results["marketing_cost"][i]
-        week_net = week_contribution - week_fixed - week_marketing
+        week_net = week_contribution - week_fixed
 
         week_start = date
         week_end = week_start + timedelta(days=6)
@@ -633,7 +640,7 @@ with tab5:
         go.Scatter(
             x=months,
             y=[monthly_values["net_revenue"][m] for m in months],
-            name="Net Revenue",
+            name="Operating Profit",
             marker_color="blue",
         )
     )
@@ -654,8 +661,8 @@ with tab5:
                 "Year-Month": month,
                 "Contribution Margin (원)": f"{monthly_values['contribution_margin'][month]:,.0f}",
                 "Fixed Cost (원)": f"{monthly_values['fixed_cost'][month]:,.0f}",
-                "Marketing Cost (원)": f"{monthly_values['marketing_cost'][month]:,.0f}",
                 "Net Revenue (원)": f"{monthly_values['net_revenue'][month]:,.0f}",
+                "Marketing Cost (원)": f"{monthly_values['marketing_cost'][month]:,.0f}",
             }
             for month in months
         ]
@@ -671,19 +678,19 @@ with tab5:
                 width="small",
             ),
             "Contribution Margin (원)": st.column_config.TextColumn(
-                "공헌이익",
+                "공헌이익 (원)",
                 width="small",
             ),
             "Fixed Cost (원)": st.column_config.TextColumn(
-                "고정비용",
-                width="small",
-            ),
-            "Marketing Cost (원)": st.column_config.TextColumn(
-                "마케팅 비용",
+                "고정비용 (원)",
                 width="small",
             ),
             "Net Revenue (원)": st.column_config.TextColumn(
-                "순수익",
+                "영업 이익 (원)",
+                width="small",
+            ),
+            "Marketing Cost (원)": st.column_config.TextColumn(
+                "마케팅 비용 (원)",
                 width="small",
             ),
         },
@@ -851,10 +858,3 @@ with tab8:
     )
     st.pyplot(arpu_fig)
 # Add metrics
-col1 = st.columns(1)
-st.metric(
-    "Total Acquired Transacting Users", f"{sum(results['weekly_new_wtu']):,.0f}명"
-)
-st.metric("Total Marketing Cost", f"{sum(results['marketing_cost']):,.0f}원")
-
-# with col1:
