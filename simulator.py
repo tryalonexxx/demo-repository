@@ -329,19 +329,19 @@ st.sidebar.header("ARPPU Parameters")
 params.update(
     {
         "current_weekly_arpu": st.sidebar.slider(
-            "Current ARPPU W1", 0, 50000, 28000, step=1000
+            "Current ARPPU W1", 0, 150000, 28000, step=1000
         ),
         "current_arpu_plateau": st.sidebar.slider(
-            "Current ARPPU Plateau", 0, 50000, 32000, step=1000
+            "Current ARPPU Plateau", 0, 150000, 32000, step=1000
         ),
         "weeks_to_plateau_arpu": st.sidebar.number_input(
             "Weeks to Plateau (ARPPU)", value=10
         ),
         "final_weekly_arpu": st.sidebar.slider(
-            "Final ARPPU W1", 0, 50000, 32000, step=1000
+            "Final ARPPU W1", 0, 150000, 32000, step=1000
         ),
         "final_arpu_plateau": st.sidebar.slider(
-            "Final ARPPU Plateau", 0, 50000, 36000, step=1000
+            "Final ARPPU Plateau", 0, 150000, 36000, step=1000
         ),
         "weeks_to_increase_arpu": st.sidebar.number_input(
             "Weeks to To-Be Scenario (ARPPU)", value=48
